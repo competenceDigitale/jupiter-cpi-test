@@ -10,6 +10,7 @@ use solana_program::program::*;
 use solana_program::instruction::Instruction;
 use jupiter_cpi::*;
 use anchor_lang::prelude::*;
+use anchor_lang::InstructionData;
 use jupiter_cpi::jupiter_override::{Swap, SwapLeg};
 
 
@@ -36,8 +37,8 @@ pub fn process_instruction(
     //let swap_leg= jupiter_cpi::jupiter_override::SwapLeg::Swap::Lifinity;
 // Define an array of SwapLegs to chain together
 let swap_legs = vec![
-    //SwapLeg::Swap(Swap::Sencha),
-    //SwapLeg::Swap(Swap::Mercurial),
+    SwapLeg::Swap(Swap::Sencha),
+    SwapLeg::Swap(Swap::Mercurial),
 ];
 
 // Chain together the SwapLegs into a single SwapLeg using the Chain variant
