@@ -24,22 +24,25 @@ pub fn process_instruction(
     instruction_data: &[u8], // Ignored, all helloworld instructions are hellos
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
-    let program = next_account_info(accounts_iter)?;
     let token_program=next_account_info(accounts_iter)?;
     let user_transfer_authority=next_account_info(accounts_iter)?;
     let destination_token_account=next_account_info(accounts_iter)?;
     
     let accounts = vec![
-        AccountMeta::new(*token_program.key, false),
-        AccountMeta::new(*user_transfer_authority.key, false),
+        AccountMeta::new_readonly(*token_program.key, false),
+        AccountMeta::new_readonly(*user_transfer_authority.key, true),
         AccountMeta::new(*destination_token_account.key, false),
     ];
     //let swap_leg= jupiter_cpi::jupiter_override::SwapLeg::Swap::Lifinity;
 // Define an array of SwapLegs to chain together
 let swap_legs = vec![
-    SwapLeg::Swap(Swap::Sencha),
-    SwapLeg::Swap(Swap::Mercurial),
-];
+        SwapLeg::Swap { swap: Swap::Cykura },
+        SwapLeg::Swap {swap: Swap::Cykura},
+        SwapLeg::Chain { swap_legs: vec![
+            SwapLeg::Swap { swap: Swap::Raydium },
+            SwapLeg::Swap {swap: Swap::Mercurial},
+        ] }
+    ];
 
 // Chain together the SwapLegs into a single SwapLeg using the Chain variant
 let swap_leg = SwapLeg::Chain { swap_legs };
@@ -56,5 +59,13 @@ let swap_leg = SwapLeg::Chain { swap_legs };
         .data(),
         
     };
+    invoke(
+        &swap_ix,
+        &[
+            token_program.clone(),
+            user_transfer_authority.clone(),
+            destination_token_account.clone()
+        ]
+    )?;
     Ok(())
 }

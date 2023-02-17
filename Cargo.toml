@@ -10,3 +10,6 @@ jupiter-cpi = "4.0.2"
 anchor-lang = "0.26.0"
 #jupiter-cpi  = { git = "https://github.com/jup-ag/jupiter-cpi", version = "4.0.1" }
 
+[lib]
+name = "testJup"
+crate-type = ["cdylib", "lib"]
