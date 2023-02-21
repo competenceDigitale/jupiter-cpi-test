@@ -1,18 +1,16 @@
+use anchor_lang::InstructionData;
+use jupiter_cpi::*;
+use solana_program::instruction::Instruction;
+use solana_program::program::*;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
+    instruction::AccountMeta,
     msg,
     program_error::ProgramError,
-    pubkey::Pubkey, instruction::AccountMeta,
+    pubkey::Pubkey,
 };
-use solana_program::program::*;
-use solana_program::instruction::Instruction;
-use jupiter_cpi::*;
-use anchor_lang::prelude::*;
-use anchor_lang::InstructionData;
-use jupiter_cpi::jupiter_override::{Swap, SwapLeg};
-
 
 // Declare and export the program's entrypoint
 entrypoint!(process_instruction);
@@ -24,48 +22,50 @@ pub fn process_instruction(
     instruction_data: &[u8], // Ignored, all helloworld instructions are hellos
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
-    let token_program=next_account_info(accounts_iter)?;
-    let user_transfer_authority=next_account_info(accounts_iter)?;
-    let destination_token_account=next_account_info(accounts_iter)?;
-    
-    let accounts = vec![
-        AccountMeta::new_readonly(*token_program.key, false),
-        AccountMeta::new_readonly(*user_transfer_authority.key, true),
-        AccountMeta::new(*destination_token_account.key, false),
-    ];
-    //let swap_leg= jupiter_cpi::jupiter_override::SwapLeg::Swap::Lifinity;
-// Define an array of SwapLegs to chain together
-let swap_legs = vec![
-        SwapLeg::Swap { swap: Swap::Cykura },
-        SwapLeg::Swap {swap: Swap::Cykura},
-        SwapLeg::Chain { swap_legs: vec![
-            SwapLeg::Swap { swap: Swap::Raydium },
-            SwapLeg::Swap {swap: Swap::Mercurial},
-        ] }
-    ];
+    let authority_ppu_info = next_account_info(accounts_iter)?;
+    let create_program_ppu_info = next_account_info(accounts_iter)?;
 
-// Chain together the SwapLegs into a single SwapLeg using the Chain variant
-let swap_leg = SwapLeg::Chain { swap_legs };
+    let (first_byte, remaining_bytes) = instruction_data.split_first().unwrap();
+    let nonce_ppu = *first_byte as u8;
+
+    let mut jupiter_metas = Vec::new();
+    let (first_accounts, remaining_accounts) = accounts.split_at(2);
+
+    let expected_allocated_key = Pubkey::create_program_address(
+        &[&create_program_ppu_info.key.to_bytes()[..32], &[nonce_ppu]],
+        program_id,
+    )?;
+    // Allocated key does not match the derived address
+    if *authority_ppu_info.key != expected_allocated_key {
+        return Err(ProgramError::InvalidArgument);
+    }
+    let authority_signature_seeds = [&create_program_ppu_info.key.to_bytes()[..32], &[nonce_ppu]];
+    let signers = &[&authority_signature_seeds[..]];
+
+    for account in remaining_accounts {
+        let account_meta = to_account_meta(&account, authority_ppu_info.key);
+        jupiter_metas.push(account_meta);
+    }
+    msg!("accounts metas size {:?} accounts infos size {:?} data size {:?} nonce {:?} ",jupiter_metas.len(),accounts.len(),remaining_bytes.len(),nonce_ppu);
+    msg!("jupiter account 1 {:?}",jupiter_metas[0]);
+    
     let swap_ix = Instruction {
         program_id: jupiter_cpi::ID,
-        accounts,
-        data: jupiter_override::Route {
-            swap_leg,
-            in_amount: 10,
-            quoted_out_amount: 0,
-            slippage_bps: 0,
-            platform_fee_bps: 0,
-        }
-        .data(),
-        
+        accounts: jupiter_metas,
+        data: remaining_bytes.to_vec(),
     };
-    invoke(
-        &swap_ix,
-        &[
-            token_program.clone(),
-            user_transfer_authority.clone(),
-            destination_token_account.clone()
-        ]
-    )?;
+    invoke_signed(&swap_ix, &remaining_accounts, signers)?;
     Ok(())
+}
+
+fn to_account_meta(info: &AccountInfo, authority_key: &Pubkey) -> AccountMeta {
+    let mut is_signer = info.is_signer;
+    if *authority_key == *info.key {
+        is_signer = true
+    }
+    AccountMeta {
+        pubkey: *info.key,
+        is_signer: is_signer,
+        is_writable: info.is_writable,
+    }
 }
